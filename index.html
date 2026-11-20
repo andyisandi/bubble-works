@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bubble Works — Packaging Studio</title>
+<meta name="description" content="Explore the Bubble Works four-pack in 3D. Arrange, stack and inspect the original print artwork from every angle.">
+<meta name="theme-color" content="#f5f4f5">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%238c205d'/%3E%3Ccircle cx='23' cy='21' r='9' fill='none' stroke='%23f4c4d0' stroke-width='2'/%3E%3Ccircle cx='42' cy='36' r='13' fill='none' stroke='%23f4c4d0' stroke-width='2'/%3E%3Ccircle cx='18' cy='47' r='5' fill='none' stroke='%23f4c4d0' stroke-width='2'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="./style.css">
+<script type="importmap">{"imports":{"three":"./assets/three.module.js"}}</script>
+<script type="module" src="./app.js?v=outer1120-c3d792e7"></script>
+</head>
+<body>
+<svg class="icon-library" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs>
+<symbol id="i-box" viewBox="0 0 24 24"><path d="m12 3 9 5-9 5-9-5 9-5Zm-9 5v9l9 5 9-5V8M12 13v9"/></symbol>
+<symbol id="i-fit" viewBox="0 0 24 24"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5M8 8h8v8H8z"/></symbol>
+<symbol id="i-reset" viewBox="0 0 24 24"><path d="M3 10a9 9 0 1 1 1 7M3 4v6h6"/></symbol>
+<symbol id="i-save" viewBox="0 0 24 24"><path d="M8 5h8l2 3h3v12H3V8h3l2-3Z"/><circle cx="12" cy="13" r="4"/></symbol>
+<symbol id="i-rotate" viewBox="0 0 24 24"><path d="M19 6a9 9 0 1 0 2 10M19 2v5h-5"/><path d="m10 8 6 4-6 4V8Z"/></symbol>
+<symbol id="i-grid" viewBox="0 0 24 24"><path d="M4 4h16v16H4zM4 12h16M12 4v16"/></symbol>
+<symbol id="i-full" viewBox="0 0 24 24"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5"/></symbol>
+<symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+<symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
+<symbol id="i-chevron" viewBox="0 0 24 24"><path d="m7 10 5 5 5-5"/></symbol>
+<symbol id="i-drag" viewBox="0 0 24 24"><path d="M9 11V5a2 2 0 0 1 4 0v7-5a2 2 0 0 1 4 0v6-3a2 2 0 0 1 4 0v5c0 5-3 7-7 7h-1c-3 0-5-2-6-4l-4-6a2 2 0 0 1 3-2l3 3"/></symbol>
+</defs></svg>
+<header class="topbar">
+ <div class="brand"><span class="brandmark" aria-hidden="true"><i></i><i></i><i></i></span><span>bubble<span class="brand-light">works</span></span><span class="brand-divider"></span><span class="workspace-title">Packaging studio</span></div>
+ <div class="header-right"><span class="edition">THE ROSÉ / 4-PACK</span><button class="save-button" id="snapshot" aria-label="Save view"><svg><use href="#i-save"/></svg><span>Save view</span></button></div>
+</header>
+<main class="studio">
+ <aside class="sidebar" aria-label="Box arrangement controls">
+  <div class="sidebar-intro"><span class="eyebrow">YOUR ARRANGEMENT</span><h1>See the bigger picture.</h1><p>One box. A shelf. A whole display.</p></div>
+  <div class="preset-grid" role="group" aria-label="Arrangement presets">
+   <button class="preset" data-preset="single" aria-pressed="false"><span class="mini-boxes single"><i></i></span>Single</button>
+   <button class="preset active" data-preset="pair" aria-pressed="true"><span class="mini-boxes pair"><i></i><i></i></span>Side by side</button>
+   <button class="preset" data-preset="stack" aria-pressed="false"><span class="mini-boxes stack"><i></i><i></i></span>Stacked</button>
+   <button class="preset" data-preset="display" aria-pressed="false"><span class="mini-boxes display"><i></i><i></i><i></i><i></i></span>Display</button>
+  </div>
+  <section class="section arrangement-section"><h2>Layout</h2>
+   <div class="control-row"><label for="across">Boxes across<span>Side by side</span></label><div class="stepper"><button data-step="across:-1" aria-label="Fewer boxes across">−</button><input id="across" type="number" min="1" max="8" value="2" inputmode="numeric"><button data-step="across:1" aria-label="More boxes across">+</button></div></div>
+   <div class="control-row"><label for="rows">Rows deep<span>Front to back</span></label><div class="stepper"><button data-step="rows:-1" aria-label="Fewer rows">−</button><input id="rows" type="number" min="1" max="4" value="1" inputmode="numeric"><button data-step="rows:1" aria-label="More rows">+</button></div></div>
+   <div class="control-row"><label for="stacks">Stacks high<span>Bottom to top</span></label><div class="stepper"><button data-step="stacks:-1" aria-label="Fewer stacked boxes">−</button><input id="stacks" type="number" min="1" max="6" value="1" inputmode="numeric"><button data-step="stacks:1" aria-label="More stacked boxes">+</button></div></div>
+  </section>
+  <section class="section"><div class="range-heading"><label for="spacing">Space between boxes</label><output id="spacing-value" for="spacing">1 mm</output></div><input type="range" id="spacing" min="1" max="40" step="1" value="1" aria-label="Space between boxes in millimeters">
+   <label class="switch-row" for="wordmark"><span>Continuous wordmark<small>Pair the two adjacent artwork faces.</small></span><input type="checkbox" id="wordmark" checked><span class="switch" aria-hidden="true"></span></label>
+  </section>
+  <section class="section view-section"><h2>View from</h2><div class="view-grid" role="group" aria-label="Camera views"><button data-view="perspective" class="selected" aria-pressed="true">Perspective</button><button data-view="front" aria-pressed="false">Front</button><button data-view="back" aria-pressed="false">Back</button><button data-view="left" aria-pressed="false">Left</button><button data-view="right" aria-pressed="false">Right</button><button data-view="top" aria-pressed="false">Top</button><button data-view="bottom" aria-pressed="false">Bottom</button></div></section>
+  <div class="sidebar-footer"><span class="artwork-badge"><svg><use href="#i-box"/></svg>Original print artwork</span><p>Latest November 20 revision · The Rosé</p></div>
+ </aside>
+ <section class="viewport" id="viewport" aria-label="Interactive 3D packaging viewport">
+  <div class="scene-heading"><div><span class="eyebrow">DISPLAY PREVIEW</span><h2 id="arrangement-title">Side by side</h2></div><div class="count-pill" id="box-count" aria-live="polite">2 boxes · 8 cans</div></div>
+  <canvas id="scene" tabindex="0" aria-label="3D boxes. Drag to rotate, right-drag or Shift-drag to pan, and scroll to zoom. Arrow keys rotate; Shift and arrow keys pan; plus or minus zoom."></canvas>
+  <div class="loading" id="loading"><div class="loading-ring"></div><span>Unpacking your artwork…</span></div>
+  <div class="error-state" id="error-state" hidden><h2>The 3D view couldn’t open.</h2><p id="error-message">Please try a browser with WebGL enabled.</p><button onclick="location.reload()">Try again</button></div>
+  <div class="viewport-actions"><button class="icon-button" id="fit" title="Fit arrangement" aria-label="Fit arrangement"><svg><use href="#i-fit"/></svg></button><button class="icon-button" id="reset" title="Reset view" aria-label="Reset view"><svg><use href="#i-reset"/></svg></button></div>
+  <div class="scene-footer"><div class="scene-measure"><span id="display-dimensions">264 × 123 × 157 mm</span><span class="measure-label">DISPLAY FOOTPRINT · W × D × H</span></div><div class="scene-toolbar" role="group" aria-label="Viewport tools"><button class="tool-button" id="auto-rotate" aria-pressed="false" title="Rotate automatically"><svg><use href="#i-rotate"/></svg><span>Auto rotate</span></button><span class="tool-divider"></span><button class="icon-button" id="grid-toggle" aria-pressed="false" aria-label="Show floor grid" title="Show floor grid"><svg><use href="#i-grid"/></svg></button><button class="icon-button" id="fullscreen" aria-label="Full screen" title="Full screen"><svg><use href="#i-full"/></svg></button></div></div>
+  <div class="interaction-hint"><span>Drag to rotate</span><b>·</b><span>Shift-drag to pan</span><b>·</b><span>Scroll to zoom</span></div>
+  <div class="toast" id="toast" role="status"></div>
+ </section>
+</main>
+</body>
+</html>

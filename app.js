@@ -1,0 +1,306 @@
+import * as THREE from 'three';
+import { OrbitControls } from './assets/OrbitControls.js';
+
+const $ = (id) => document.getElementById(id);
+const host = $('viewport');
+const canvas = $('scene');
+const state = { across: 2, rows: 1, stacks: 1, spacing: 1, wordmark: true, autoRotate: false, grid: false, view: 'perspective' };
+const limits = { across: 8, rows: 4, stacks: 6 };
+const SIZE = { w: 1.3214738056, h: 1.5699986944, d: 1.3212374444 };
+const capacity = limits.across * limits.rows * limits.stacks;
+let renderer, controls, scene, camera, boxes, closure, edges, floor, grid, contact, key, fill;
+let sceneBounds = new THREE.Box3();
+let transition = null;
+let dirty = true;
+let toastTimer;
+const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const viewDirections = {
+  perspective: new THREE.Vector3(5.4, 3.5, 8.2).normalize(),
+  front: new THREE.Vector3(0, 0, 1), back: new THREE.Vector3(0, 0, -1),
+  left: new THREE.Vector3(-1, 0, 0), right: new THREE.Vector3(1, 0, 0),
+  top: new THREE.Vector3(0, 1, .00001), bottom: new THREE.Vector3(0, -1, .00001),
+};
+
+function toast(message) {
+  $('toast').textContent = message;
+  $('toast').classList.add('visible');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => $('toast').classList.remove('visible'), 2400);
+}
+function setViewSelection(name) {
+  state.view = name;
+  document.querySelectorAll('[data-view]').forEach(el => {
+    const selected = el.dataset.view === name;
+    el.classList.toggle('selected', selected);
+    el.setAttribute('aria-pressed', String(selected));
+  });
+}
+function syncUI() {
+  for (const name of Object.keys(limits)) {
+    $(name).value = state[name];
+    document.querySelector(`[data-step="${name}:-1"]`).disabled = state[name] <= 1;
+    document.querySelector(`[data-step="${name}:1"]`).disabled = state[name] >= limits[name];
+  }
+  $('spacing').value = state.spacing;
+  $('spacing-value').textContent = `${state.spacing} mm`;
+  const count = state.across * state.rows * state.stacks;
+  $('box-count').textContent = `${count} ${count === 1 ? 'box' : 'boxes'} · ${count * 4} cans`;
+  const name = count === 1 ? 'Single box' : state.stacks > 1 && state.across === 1 && state.rows === 1 ? 'Stacked' : state.stacks === 1 && state.rows === 1 ? 'Side by side' : 'Display arrangement';
+  $('arrangement-title').textContent = name;
+  const matches = { single: [1,1,1], pair: [2,1,1], stack: [1,1,2], display: [2,2,2] };
+  document.querySelectorAll('[data-preset]').forEach(el => {
+    const a = matches[el.dataset.preset];
+    const active = state.across === a[0] && state.rows === a[1] && state.stacks === a[2];
+    el.classList.toggle('active', active);
+    el.setAttribute('aria-pressed', String(active));
+  });
+}
+function resize() {
+  if (!renderer) return;
+  const width = host.clientWidth, height = host.clientHeight;
+  renderer.setSize(width, height, false);
+  camera.aspect = width / height;
+  camera.updateProjectionMatrix();
+  if (boxes) frameView(state.view || 'perspective', false);
+  dirty = true;
+}
+function fittingDistance() {
+  const size = sceneBounds.getSize(new THREE.Vector3());
+  const sphere = sceneBounds.getBoundingSphere(new THREE.Sphere());
+  const halfFov = THREE.MathUtils.degToRad(camera.fov / 2);
+  const limitingFov = Math.min(halfFov, Math.atan(Math.tan(halfFov) * camera.aspect));
+  // Reserve space for the viewport title and lower tools.
+  return Math.max(sphere.radius / Math.sin(limitingFov) * 1.14, size.y * 1.65, 2.3);
+}
+function frameView(name = 'perspective', animate = true, preserveDirection = false) {
+  if (!controls || !boxes) return;
+  const center = sceneBounds.getCenter(new THREE.Vector3());
+  const direction = preserveDirection ? camera.position.clone().sub(controls.target).normalize() : (viewDirections[name] || viewDirections.perspective).clone();
+  const distance = fittingDistance();
+  const position = center.clone().addScaledVector(direction, distance);
+  // OrbitControls uses a fixed up axis. Polar views stay just off the pole,
+  // allowing a natural drag out of any preset.
+  camera.up.set(0, 1, 0);
+  if (animate && !reducedMotion) {
+    transition = { start: performance.now(), from: camera.position.clone(), targetFrom: controls.target.clone(), to: position, targetTo: center, duration: 620 };
+  } else {
+    transition = null;
+    camera.position.copy(position);
+    controls.target.copy(center);
+    controls.update();
+  }
+  controls.maxDistance = Math.max(distance * 7, 20);
+  controls.minDistance = .2;
+  dirty = true;
+}
+function arrange(animate = true) {
+  if (!boxes) return;
+  const { w,h,d } = SIZE;
+  state.spacing=Math.max(1,Math.min(40,state.spacing));
+  const gap = state.spacing / 100;
+  const dummy = new THREE.Object3D();
+  const edgeBase = new THREE.EdgesGeometry(new THREE.BoxGeometry(w,h,d));
+  const basePoints = edgeBase.getAttribute('position');
+  const count = state.across * state.rows * state.stacks;
+  const edgeArray = new Float32Array(basePoints.count * count * 3);
+  const v = new THREE.Vector3();
+  let n = 0, j = 0;
+  sceneBounds.makeEmpty();
+  for (let y=0; y<state.stacks; y++) for (let z=0; z<state.rows; z++) for (let x=0; x<state.across; x++) {
+    const yaw = state.wordmark && x % 2 === 1 ? -Math.PI / 2 : 0;
+    // Keep all columns on the same footprint. The PDF's slightly different
+    // width and depth are respected, including rotated cartons.
+    const columnWidths = Array.from({length:state.across}, (_,i) => state.wordmark && i%2 ? d : w);
+    const totalWidth = columnWidths.reduce((a,b)=>a+b,0) + gap * (state.across-1);
+    const px = -totalWidth/2 + columnWidths.slice(0,x).reduce((a,b)=>a+b,0) + gap*x + columnWidths[x]/2;
+    const rowDepth = state.wordmark && state.across > 1 ? Math.max(w,d) : d;
+    dummy.position.set(px, h/2 + y*(h+gap), ((state.rows-1)/2-z)*(rowDepth+gap)+(rowDepth-(yaw?w:d))/2);
+    dummy.rotation.set(0,yaw,0);
+    dummy.updateMatrix();
+    boxes.setMatrixAt(n, dummy.matrix);
+    closure.setMatrixAt(n++, dummy.matrix);
+    const ext = new THREE.Vector3(yaw ? d/2 : w/2,h/2,yaw ? w/2 : d/2);
+    sceneBounds.expandByPoint(dummy.position.clone().sub(ext));
+    sceneBounds.expandByPoint(dummy.position.clone().add(ext));
+    for(let k=0;k<basePoints.count;k++) {
+      v.fromBufferAttribute(basePoints,k).applyMatrix4(dummy.matrix);
+      edgeArray[j++]=v.x;edgeArray[j++]=v.y;edgeArray[j++]=v.z;
+    }
+  }
+  edgeBase.dispose();
+  boxes.count=count;
+  closure.count=count;
+  closure.instanceMatrix.needsUpdate=true;
+  closure.computeBoundingSphere();
+  closure.computeBoundingBox();
+  boxes.instanceMatrix.needsUpdate=true;
+  boxes.computeBoundingSphere();
+  boxes.computeBoundingBox();
+  edges.geometry.dispose();
+  edges.geometry = new THREE.BufferGeometry();
+  edges.geometry.setAttribute('position',new THREE.BufferAttribute(edgeArray,3));
+  const dims=sceneBounds.getSize(new THREE.Vector3());
+  $('display-dimensions').textContent=`${Math.round(dims.x*100)} × ${Math.round(dims.z*100)} × ${Math.round(dims.y*100)} mm`;
+  contact.scale.set(dims.x*1.45+1.4,dims.z*1.45+1.1,1);
+  contact.position.set(0,.001,0);
+  const shadowSpan=Math.max(dims.x,dims.z,dims.y)*1.3+3;
+  key.shadow.camera.left=-shadowSpan;key.shadow.camera.right=shadowSpan;
+  key.shadow.camera.top=shadowSpan;key.shadow.camera.bottom=-shadowSpan;
+  key.shadow.camera.updateProjectionMatrix();
+  key.position.set(-shadowSpan*.45,shadowSpan*1.2,shadowSpan*.75);
+  key.target.position.set(0,dims.y*.35,0);
+  syncUI();
+  frameView(state.view || 'perspective',animate,!state.view);
+  dirty=true;
+}
+function setupInputs() {
+  for(const name of Object.keys(limits)) $(name).addEventListener('change',()=>{
+    state[name]=Math.max(1,Math.min(limits[name],Math.round(Number($(name).value)||1)));
+    arrange();
+  });
+  document.querySelectorAll('[data-step]').forEach(el=>el.addEventListener('click',()=>{
+    const [name,delta]=el.dataset.step.split(':');
+    state[name]=Math.max(1,Math.min(limits[name],state[name]+Number(delta)));arrange();
+  }));
+  document.querySelectorAll('[data-preset]').forEach(el=>el.addEventListener('click',()=>{
+    const a={single:[1,1,1],pair:[2,1,1],stack:[1,1,2],display:[2,2,2]}[el.dataset.preset];
+    [state.across,state.rows,state.stacks]=a;setViewSelection('perspective');arrange();
+  }));
+  $('spacing').addEventListener('input',()=>{state.spacing=Math.max(1,Math.min(40,Math.round(Number($('spacing').value)||1)));arrange(false);});
+  $('wordmark').addEventListener('change',()=>{state.wordmark=$('wordmark').checked;arrange();});
+  document.querySelectorAll('[data-view]').forEach(el=>el.addEventListener('click',()=>{setViewSelection(el.dataset.view);frameView(el.dataset.view);}));
+  $('fit').addEventListener('click',()=>frameView(state.view || 'perspective',true,true));
+  $('reset').addEventListener('click',()=>{controls.autoRotate=false;state.autoRotate=false;$('auto-rotate').setAttribute('aria-pressed','false');setViewSelection('perspective');frameView('perspective');});
+  $('auto-rotate').addEventListener('click',()=>{
+    state.autoRotate=!state.autoRotate;controls.autoRotate=state.autoRotate;
+    $('auto-rotate').setAttribute('aria-pressed',String(state.autoRotate));dirty=true;
+  });
+  $('grid-toggle').addEventListener('click',()=>{
+    state.grid=!state.grid;grid.visible=state.grid;
+    $('grid-toggle').setAttribute('aria-pressed',String(state.grid));$('grid-toggle').setAttribute('aria-label',state.grid?'Hide floor grid':'Show floor grid');dirty=true;
+  });
+  $('fullscreen').addEventListener('click',async()=>{
+    try{if(document.fullscreenElement)await document.exitFullscreen();else await host.requestFullscreen();}catch{toast('Full screen is not available in this browser.');}
+  });
+  $('snapshot').addEventListener('click',()=>{
+    if(!renderer)return;
+    renderer.render(scene,camera);
+    canvas.toBlob(blob=>{
+      if(!blob){toast('Could not save this view. Please try again.');return;}
+      const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`bubbleworks-${state.across}x${state.rows}x${state.stacks}.png`;a.click();setTimeout(()=>URL.revokeObjectURL(url),10000);toast('Your view has been saved.');
+    },'image/png');
+  });
+  canvas.addEventListener('keydown',e=>{
+    if(['+','=','-','_'].includes(e.key)) {
+      e.preventDefault();transition=null;
+      camera.position.sub(controls.target).multiplyScalar(e.key==='-'||e.key==='_'?1.14:.88).add(controls.target);dirty=true;return;
+    }
+    if(!e.key.startsWith('Arrow'))return;
+    e.preventDefault();transition=null;
+    const delta=new THREE.Vector3().subVectors(camera.position,controls.target);
+    if(e.shiftKey){
+      const amount=delta.length()*.035;
+      const right=new THREE.Vector3().setFromMatrixColumn(camera.matrix,0);
+      const up=new THREE.Vector3().setFromMatrixColumn(camera.matrix,1);
+      const shift=e.key==='ArrowLeft'?right.multiplyScalar(-amount):e.key==='ArrowRight'?right.multiplyScalar(amount):e.key==='ArrowUp'?up.multiplyScalar(amount):up.multiplyScalar(-amount);
+      controls.target.add(shift);camera.position.add(shift);
+    }else{
+      const spherical=new THREE.Spherical().setFromVector3(delta);
+      if(e.key==='ArrowLeft')spherical.theta-=.12;if(e.key==='ArrowRight')spherical.theta+=.12;
+      if(e.key==='ArrowUp')spherical.phi=Math.max(.02,spherical.phi-.12);if(e.key==='ArrowDown')spherical.phi=Math.min(Math.PI-.02,spherical.phi+.12);
+      camera.position.copy(controls.target).add(new THREE.Vector3().setFromSpherical(spherical));
+      setViewSelection('');
+    }
+    controls.update();dirty=true;
+  });
+}
+
+async function init() {
+  try {
+    renderer=new THREE.WebGLRenderer({canvas,antialias:true,preserveDrawingBuffer:true,powerPreference:'high-performance'});
+    renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+    renderer.outputColorSpace=THREE.SRGBColorSpace;
+    renderer.toneMapping=THREE.NoToneMapping;
+    renderer.toneMappingExposure=1;
+    renderer.shadowMap.enabled=true;
+    renderer.shadowMap.type=THREE.VSMShadowMap;
+    scene=new THREE.Scene();
+    scene.background=new THREE.Color('#cbcbcd');
+    scene.fog=new THREE.Fog('#cbcbcd',35,90);
+    camera=new THREE.PerspectiveCamera(33,host.clientWidth/host.clientHeight,.015,150);
+    camera.position.set(5,4,8);
+    controls=new OrbitControls(camera,canvas);
+    controls.enableDamping=true;controls.dampingFactor=.09;
+    controls.screenSpacePanning=true;controls.zoomSpeed=.8;controls.panSpeed=.8;controls.rotateSpeed=.65;
+    controls.minPolarAngle=.003;controls.maxPolarAngle=Math.PI-.003;
+    controls.autoRotateSpeed=.7;
+    controls.addEventListener('change',()=>{dirty=true;});
+    controls.addEventListener('start',()=>{transition=null;setViewSelection('');});
+    canvas.addEventListener('contextmenu',e=>e.preventDefault());
+    scene.add(new THREE.HemisphereLight('#ffffff','#c2b6bd',1.65));
+    key=new THREE.DirectionalLight('#fffaf8',1.5);key.position.set(-4,8,6);key.castShadow=true;
+    key.shadow.mapSize.set(1024,1024);key.shadow.bias=-.0002;key.shadow.normalBias=.015;key.shadow.radius=7;key.shadow.blurSamples=12;
+    key.shadow.camera.near=.1;key.shadow.camera.far=90;
+    scene.add(key,key.target);
+    fill=new THREE.DirectionalLight('#f4f6ff',.55);fill.position.set(5,4,-3);scene.add(fill);
+    const loader=new THREE.TextureLoader();
+    const artworkResponse=await fetch('./assets/artwork.json?v=outer1120-c3d792e7');
+    if(!artworkResponse.ok)throw new Error('Artwork metadata could not load');
+    const artwork=await artworkResponse.json();
+    Object.assign(SIZE,{w:artwork.widthMm/100,h:artwork.heightMm/100,d:artwork.depthMm/100});
+    const faceNames=['right','left','top','bottom','front','back'];
+    const maps=await Promise.all(faceNames.map(name=>loader.loadAsync(`./assets/${name}.png?v=outer1120-c3d792e7`)));
+    const anisotropy=renderer.capabilities.getMaxAnisotropy();
+    maps.forEach(t=>{t.colorSpace=THREE.SRGBColorSpace;t.anisotropy=anisotropy;t.generateMipmaps=true;});
+    const materials=maps.map(map=>new THREE.MeshStandardMaterial({map,roughness:.92,metalness:0}));
+    boxes=new THREE.InstancedMesh(new THREE.BoxGeometry(SIZE.w,SIZE.h,SIZE.d),materials,capacity);
+    boxes.instanceMatrix.setUsage(THREE.DynamicDrawUsage);boxes.castShadow=true;boxes.receiveShadow=true;scene.add(boxes);
+    // The barcode-side lower locking flap is a separate, shallow card layer.
+    // Its visible cut profile interlocks with the upper rear flap, matching Frame 11.
+    const flapShape=new THREE.Shape();
+    artwork.closure.visibleLowerFlapOutline.forEach(([u,v],i)=>{
+      const x=(Math.max(0,Math.min(1,u))-.5)*SIZE.w;
+      const y=(.5-Math.max(0,Math.min(1,v)))*SIZE.h;
+      if(i===0)flapShape.moveTo(x,y);else flapShape.lineTo(x,y);
+    });
+    flapShape.closePath();
+    const flapGeometry=new THREE.ExtrudeGeometry(flapShape,{depth:artwork.closure.paperThicknessMm/100,bevelEnabled:false,steps:1,curveSegments:1});
+    const flapPositions=flapGeometry.getAttribute('position');
+    const flapUv=flapGeometry.getAttribute('uv');
+    for(let i=0;i<flapPositions.count;i++)flapUv.setXY(i,flapPositions.getX(i)/SIZE.w+.5,flapPositions.getY(i)/SIZE.h+.5);
+    flapGeometry.rotateY(Math.PI);
+    flapGeometry.translate(0,0,-SIZE.d/2-.0002);
+    const paperEdge=new THREE.MeshStandardMaterial({color:'#d7a3b3',roughness:1,metalness:0});
+    closure=new THREE.InstancedMesh(flapGeometry,[materials[5],paperEdge],capacity);
+    closure.instanceMatrix.setUsage(THREE.DynamicDrawUsage);closure.receiveShadow=false;scene.add(closure);
+    edges=new THREE.LineSegments(new THREE.BufferGeometry(),new THREE.LineBasicMaterial({color:'#62274b',transparent:true,opacity:.2}));scene.add(edges);
+    floor=new THREE.Mesh(new THREE.PlaneGeometry(250,250),new THREE.MeshStandardMaterial({color:'#c6c6c8',roughness:1,metalness:0}));
+    floor.rotation.x=-Math.PI/2;floor.position.y=-.006;floor.receiveShadow=true;scene.add(floor);
+    const shadowCanvas=document.createElement('canvas');shadowCanvas.width=shadowCanvas.height=256;
+    const ctx=shadowCanvas.getContext('2d');const gradient=ctx.createRadialGradient(128,128,15,128,128,128);
+    gradient.addColorStop(0,'rgba(54,34,47,0.27)');gradient.addColorStop(.4,'rgba(54,34,47,0.13)');gradient.addColorStop(1,'rgba(54,34,47,0)');ctx.fillStyle=gradient;ctx.fillRect(0,0,256,256);
+    contact=new THREE.Mesh(new THREE.PlaneGeometry(1,1),new THREE.MeshBasicMaterial({map:new THREE.CanvasTexture(shadowCanvas),transparent:true,depthWrite:false,opacity:.55}));contact.rotation.x=-Math.PI/2;scene.add(contact);
+    grid=new THREE.GridHelper(40,80,'#a79ba3','#b8afb6');grid.position.y=.003;grid.material.transparent=true;grid.material.opacity=.3;grid.visible=false;scene.add(grid);
+    resize();setupInputs();arrange(false);
+    new ResizeObserver(resize).observe(host);
+    $('loading').classList.add('done');
+    window.packagingStudio={state,renderer,scene,camera,controls,boxes,closure,sceneBounds,frameView,arrange,SIZE,artworkSource:artwork.source,artworkRevision:artwork.revision,artwork};
+    let previous=performance.now();
+    renderer.setAnimationLoop(now=>{
+      const dt=Math.min((now-previous)/1000,.1);previous=now;
+      if(transition){
+        const raw=Math.min((now-transition.start)/transition.duration,1);const p=raw*raw*(3-2*raw);
+        camera.position.lerpVectors(transition.from,transition.to,p);
+        controls.target.lerpVectors(transition.targetFrom,transition.targetTo,p);dirty=true;
+        if(raw===1)transition=null;
+      }
+      const moved=controls.update(dt);
+      if(dirty||moved||controls.autoRotate||transition){renderer.render(scene,camera);dirty=false;}
+    });
+  } catch(error) {
+    console.error('Packaging studio:',error);
+    $('loading').classList.add('done');$('error-state').hidden=false;
+    if(/texture|load|fetch|image/i.test(error.message))$('error-message').textContent='The artwork could not load. Check your connection and try again.';
+  }
+}
+init();
