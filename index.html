@@ -8,7 +8,7 @@
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%238c205d'/%3E%3Ccircle cx='23' cy='21' r='9' fill='none' stroke='%23f4c4d0' stroke-width='2'/%3E%3Ccircle cx='42' cy='36' r='13' fill='none' stroke='%23f4c4d0' stroke-width='2'/%3E%3Ccircle cx='18' cy='47' r='5' fill='none' stroke='%23f4c4d0' stroke-width='2'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="./style.css">
 <script type="importmap">{"imports":{"three":"./assets/three.module.js"}}</script>
-<script type="module" src="./app.js?v=outer1120-c3d792e7"></script>
+<script type="module" src="./app.js?v=dark-cutouts-3"></script>
 </head>
 <body>
 <svg class="icon-library" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs>
@@ -31,6 +31,15 @@
 <main class="studio">
  <aside class="sidebar" aria-label="Box arrangement controls">
   <div class="sidebar-intro"><span class="eyebrow">YOUR ARRANGEMENT</span><h1>See the bigger picture.</h1><p>One box. A shelf. A whole display.</p></div>
+  <section class="section upload-section" aria-labelledby="upload-heading">
+   <h2 id="upload-heading">Dieline design</h2>
+   <p class="upload-help">Upload a PDF using this box’s existing dieline layout.</p>
+   <input id="design-file" type="file" accept=".pdf,application/pdf" hidden>
+   <button id="upload-design" class="upload-button">Upload Design</button>
+   <p id="upload-status" class="upload-status" role="status" aria-live="polite">Original design loaded · 2 handle cut-outs</p>
+   <p class="upload-note">Dashed cut-out outlines inside panels become openings. Files stay in your browser.</p>
+   <button id="restore-design" class="restore-button" hidden>Restore original design</button>
+  </section>
   <div class="preset-grid" role="group" aria-label="Arrangement presets">
    <button class="preset" data-preset="single" aria-pressed="false"><span class="mini-boxes single"><i></i></span>Single</button>
    <button class="preset active" data-preset="pair" aria-pressed="true"><span class="mini-boxes pair"><i></i><i></i></span>Side by side</button>

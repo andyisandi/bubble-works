@@ -215,6 +215,47 @@ function setupInputs() {
   });
 }
 
+function setupDesignUpload(artwork,materials,originalMaps) {
+  const names=['right','left','top','bottom','front','back'];
+  const originalStatus=artwork.cutouts?`Original design loaded · ${artwork.cutouts} handle cut-outs`:'Original design loaded';
+  const input=$('design-file'),button=$('upload-design'),restore=$('restore-design'),status=$('upload-status');
+  let uploadedMaps=[];
+  const report=(text,error=false)=>{status.textContent=text;status.dataset.error=String(error);};
+  const applyMaps=maps=>{
+    materials.forEach((material,i)=>{material.map=maps[i];material.needsUpdate=true;});
+    uploadedMaps.forEach(map=>map.dispose());uploadedMaps=maps===originalMaps?[]:maps;
+    dirty=true;
+  };
+  report(originalStatus);
+  button.addEventListener('click',()=>input.click());
+  input.addEventListener('change',async()=>{
+    const file=input.files?.[0];if(!file)return;
+    button.disabled=true;restore.disabled=true;button.textContent='Updating design…';
+    try{
+      const {readDesign}=await import('./design-upload.js?v=2');
+      const design=await readDesign(file,artwork,report);
+      const maps=names.map(name=>{
+        const map=new THREE.CanvasTexture(design.faces[name]);map.colorSpace=THREE.SRGBColorSpace;
+        map.anisotropy=renderer.capabilities.getMaxAnisotropy();return map;
+      });
+      applyMaps(maps);
+      Object.assign(window.packagingStudio,{artworkSource:design.fileName,artworkRevision:'uploaded',upload:{fileName:design.fileName,cutouts:design.cutouts}});
+      report(`${design.fileName} · ${design.cutouts} cut-out${design.cutouts===1?'':'s'} detected`);
+      restore.hidden=false;
+      document.querySelector('.artwork-badge').lastChild.textContent='Uploaded design artwork';
+      document.querySelector('.sidebar-footer p').textContent=design.fileName;
+      toast('Your new design is ready to explore.');
+    }catch(error){console.error('Design upload:',error);report(error.message||'The design could not load. Please try another PDF.',true);}
+    finally{button.disabled=false;restore.disabled=false;button.textContent='Upload Design';input.value='';}
+  });
+  restore.addEventListener('click',()=>{
+    applyMaps(originalMaps);restore.hidden=true;report(originalStatus);
+    Object.assign(window.packagingStudio,{artworkSource:artwork.source,artworkRevision:artwork.revision,upload:null});
+    document.querySelector('.artwork-badge').lastChild.textContent='Original print artwork';
+    document.querySelector('.sidebar-footer p').textContent='Latest November 20 revision · The Rosé';
+  });
+}
+
 async function init() {
   try {
     renderer=new THREE.WebGLRenderer({canvas,antialias:true,preserveDrawingBuffer:true,powerPreference:'high-performance'});
@@ -244,15 +285,25 @@ async function init() {
     scene.add(key,key.target);
     fill=new THREE.DirectionalLight('#f4f6ff',.55);fill.position.set(5,4,-3);scene.add(fill);
     const loader=new THREE.TextureLoader();
-    const artworkResponse=await fetch('./assets/artwork.json?v=outer1120-c3d792e7');
+    const artworkResponse=await fetch('./assets/artwork.json?v=outer1120-6660c005');
     if(!artworkResponse.ok)throw new Error('Artwork metadata could not load');
     const artwork=await artworkResponse.json();
     Object.assign(SIZE,{w:artwork.widthMm/100,h:artwork.heightMm/100,d:artwork.depthMm/100});
     const faceNames=['right','left','top','bottom','front','back'];
-    const maps=await Promise.all(faceNames.map(name=>loader.loadAsync(`./assets/${name}.png?v=outer1120-c3d792e7`)));
+    const maps=await Promise.all(faceNames.map(name=>loader.loadAsync(`./assets/${name}.png?v=outer1120-6660c005`)));
     const anisotropy=renderer.capabilities.getMaxAnisotropy();
     maps.forEach(t=>{t.colorSpace=THREE.SRGBColorSpace;t.anisotropy=anisotropy;t.generateMipmaps=true;});
-    const materials=maps.map(map=>new THREE.MeshStandardMaterial({map,roughness:.92,metalness:0}));
+    const materials=maps.map(map=>{
+      const material=new THREE.MeshStandardMaterial({map,roughness:.92,metalness:0,side:THREE.DoubleSide});
+      // Keep the PDF cut-out mask, but present each opening as near-black
+      // backing so the box interior never shows through from any angle.
+      material.onBeforeCompile=shader=>{
+        shader.fragmentShader=shader.fragmentShader
+          .replace('#include <map_fragment>','#include <map_fragment>\nbool cutoutArea = diffuseColor.a < 0.5;\ndiffuseColor.a = 1.0;')
+          .replace('#include <opaque_fragment>','if (cutoutArea) outgoingLight = vec3(0.01444, 0.01444, 0.016);\n#include <opaque_fragment>');
+      };
+      return material;
+    });
     boxes=new THREE.InstancedMesh(new THREE.BoxGeometry(SIZE.w,SIZE.h,SIZE.d),materials,capacity);
     boxes.instanceMatrix.setUsage(THREE.DynamicDrawUsage);boxes.castShadow=true;boxes.receiveShadow=true;scene.add(boxes);
     // The barcode-side lower locking flap is a separate, shallow card layer.
@@ -285,6 +336,7 @@ async function init() {
     new ResizeObserver(resize).observe(host);
     $('loading').classList.add('done');
     window.packagingStudio={state,renderer,scene,camera,controls,boxes,closure,sceneBounds,frameView,arrange,SIZE,artworkSource:artwork.source,artworkRevision:artwork.revision,artwork};
+    setupDesignUpload(artwork,materials,maps);
     let previous=performance.now();
     renderer.setAnimationLoop(now=>{
       const dt=Math.min((now-previous)/1000,.1);previous=now;

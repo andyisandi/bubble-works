@@ -3,8 +3,8 @@
   "heightMm": 156.99986944444444,
   "depthMm": 132.12374444444444,
   "source": "Outer box_ 1120.pdf",
-  "sourceSha256": "c3d792e7501b4e40bb85d63d6706c24fc83d17c4490b6595ef5022d166615faf",
-  "revision": "outer1120-c3d792e7",
+  "sourceSha256": "6660c005a03b4dceb45d0d2fb097514a67b926df49ab168482d4301f59c50ca0",
+  "revision": "outer1120-6660c005",
   "bandStartFraction": 0.7889705882352941,
   "lightPinkRgb": [
     245,
@@ -158,5 +158,7 @@
       503.1951,
       1196.0043
     ]
-  }
+  },
+  "cutouts": 2,
+  "cutoutDescription": "Two opposing D-shaped handle openings in the top panel"
 }
