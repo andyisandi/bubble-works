@@ -12,7 +12,8 @@ let renderer, controls, scene, camera, boxes, closure, edges, floor, grid, conta
 let sceneBounds = new THREE.Box3();
 let transition = null;
 let dirty = true;
-let toastTimer, renderLoop, compatibilityPending;
+let toastTimer, renderLoop, compatibilityPending, resolutionTimer;
+let modelRevision=0, interacting=false;
 let resolveViewerReady, rejectViewerReady;
 const viewerReady=new Promise((resolve,reject)=>{resolveViewerReady=resolve;rejectViewerReady=reject;});
 const startup={phase:'graphics',mode:null,graphicsFailures:[]};
@@ -59,10 +60,19 @@ function syncUI() {
     el.setAttribute('aria-pressed', String(active));
   });
 }
+function updateResolution() {
+  if(renderer?.mode!=='webgl')return;
+  const moving=interacting||!!transition||state.autoRotate;
+  const budget=moving?1400000:3000000;
+  const ratio=Math.min(devicePixelRatio,moving?1:1.5,Math.sqrt(budget/Math.max(1,host.clientWidth*host.clientHeight)));
+  if(Math.abs(renderer.getPixelRatio()-ratio)>.01){renderer.setPixelRatio(ratio);dirty=true;}
+  startup.pixelRatio=ratio;
+}
 function resize() {
   if (!renderer) return;
   const width = host.clientWidth, height = host.clientHeight;
   renderer.setSize(width, height, false);
+  updateResolution();
   camera.aspect = width / height;
   camera.updateProjectionMatrix();
   if (boxes) frameView(state.view || 'perspective', false);
@@ -95,6 +105,7 @@ function frameView(name = 'perspective', animate = true, preserveDirection = fal
   }
   controls.maxDistance = Math.max(distance * 7, 20);
   controls.minDistance = .2;
+  updateResolution();
   dirty = true;
 }
 function arrange(animate = true) {
@@ -153,6 +164,8 @@ function arrange(animate = true) {
   key.shadow.camera.updateProjectionMatrix();
   key.position.set(-shadowSpan*.45,shadowSpan*1.2,shadowSpan*.75);
   key.target.position.set(0,dims.y*.35,0);
+  modelRevision++;
+  renderer.shadowMap.needsUpdate=true;
   syncUI();
   frameView(state.view || 'perspective',animate,!state.view);
   dirty=true;
@@ -176,11 +189,11 @@ function setupInputs() {
   $('fit').addEventListener('click',()=>frameView(state.view || 'perspective',true,true));
   $('reset').addEventListener('click',()=>{controls.autoRotate=false;state.autoRotate=false;$('auto-rotate').setAttribute('aria-pressed','false');setViewSelection('perspective');frameView('perspective');});
   $('auto-rotate').addEventListener('click',()=>{
-    state.autoRotate=!state.autoRotate;controls.autoRotate=state.autoRotate;
+    state.autoRotate=!state.autoRotate;controls.autoRotate=state.autoRotate;updateResolution();
     $('auto-rotate').setAttribute('aria-pressed',String(state.autoRotate));dirty=true;
   });
   $('grid-toggle').addEventListener('click',()=>{
-    state.grid=!state.grid;grid.visible=state.grid;
+    state.grid=!state.grid;grid.visible=state.grid;modelRevision++;
     $('grid-toggle').setAttribute('aria-pressed',String(state.grid));$('grid-toggle').setAttribute('aria-label',state.grid?'Hide floor grid':'Show floor grid');dirty=true;
   });
   $('fullscreen').addEventListener('click',async()=>{
@@ -229,6 +242,7 @@ function setupDesignUpload(readiness) {
   const applyMaps=maps=>{
     materials.forEach((material,i)=>{material.map=maps[i];material.needsUpdate=true;});
     uploadedMaps.forEach(map=>map.dispose());uploadedMaps=maps===originalMaps?[]:maps;
+    modelRevision++;renderer.shadowMap.needsUpdate=true;
     dirty=true;
   };
   readiness.then(context=>{
@@ -268,17 +282,24 @@ function setupDesignUpload(readiness) {
 }
 
 async function compatibilityRenderer() {
-  const {createCompatibilityRenderer}=await import('./compatibility-renderer.js?v=recovery-1');
-  return createCompatibilityRenderer(canvas,()=>({boxes,size:SIZE,contact,grid}));
+  const {createCompatibilityRenderer}=await import('./compatibility-renderer.js?v=performance-1');
+  return createCompatibilityRenderer(canvas,()=>({boxes,size:SIZE,contact,grid,revision:modelRevision}));
 }
 async function createRenderer() {
   // Let the browser select its available GPU; a forced high-performance
   // context can be unavailable after a driver reset or on restricted clients.
   for(const antialias of [true,false]){
     try{
-      const options={antialias,alpha:false,preserveDrawingBuffer:true,powerPreference:'default'};
+      const options={antialias,alpha:false,preserveDrawingBuffer:false,powerPreference:'default'};
       const context=canvas.getContext('webgl2',options);
       if(!context)throw new Error('WebGL2 context unavailable');
+      const debug=context.getExtension('WEBGL_debug_renderer_info');
+      const gpu=debug?context.getParameter(debug.UNMASKED_RENDERER_WEBGL):'';
+      startup.gpu=gpu;
+      if(/swiftshader|llvmpipe|softpipe|software|basic render/i.test(gpu)){
+        startup.graphicsFailures.push('Software WebGL renderer; using composited 3D');
+        return compatibilityRenderer();
+      }
       const result=new THREE.WebGLRenderer({canvas,context,...options});
       result.mode='webgl';return result;
     }catch(error){startup.graphicsFailures.push(error.message);}
@@ -307,11 +328,13 @@ async function init() {
   try {
     renderer=await createRenderer();
     startup.mode=renderer.mode;
-    renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+    updateResolution();
     renderer.outputColorSpace=THREE.SRGBColorSpace;
     renderer.toneMapping=THREE.NoToneMapping;
     renderer.toneMappingExposure=1;
     renderer.shadowMap.enabled=true;
+    renderer.shadowMap.autoUpdate=false;
+    renderer.shadowMap.needsUpdate=true;
     renderer.shadowMap.type=THREE.VSMShadowMap;
     scene=new THREE.Scene();
     scene.background=new THREE.Color('#cbcbcd');
@@ -319,12 +342,17 @@ async function init() {
     camera=new THREE.PerspectiveCamera(33,host.clientWidth/host.clientHeight,.015,150);
     camera.position.set(5,4,8);
     controls=new OrbitControls(camera,canvas);
-    controls.enableDamping=true;controls.dampingFactor=.09;
+    controls.enableDamping=true;controls.dampingFactor=.16;
     controls.screenSpacePanning=true;controls.zoomSpeed=.8;controls.panSpeed=.8;controls.rotateSpeed=.65;
     controls.minPolarAngle=.003;controls.maxPolarAngle=Math.PI-.003;
     controls.autoRotateSpeed=.7;
     controls.addEventListener('change',()=>{dirty=true;});
-    controls.addEventListener('start',()=>{transition=null;setViewSelection('');});
+    controls.addEventListener('start',()=>{
+      transition=null;setViewSelection('');interacting=true;clearTimeout(resolutionTimer);updateResolution();
+    });
+    controls.addEventListener('end',()=>{
+      clearTimeout(resolutionTimer);resolutionTimer=setTimeout(()=>{interacting=false;updateResolution();dirty=true;},250);
+    });
     canvas.addEventListener('contextmenu',e=>e.preventDefault());
     scene.add(new THREE.HemisphereLight('#ffffff','#c2b6bd',1.65));
     key=new THREE.DirectionalLight('#fffaf8',1.5);key.position.set(-4,8,6);key.castShadow=true;
@@ -398,7 +426,7 @@ async function init() {
         const raw=Math.min((now-transition.start)/transition.duration,1);const p=raw*raw*(3-2*raw);
         camera.position.lerpVectors(transition.from,transition.to,p);
         controls.target.lerpVectors(transition.targetFrom,transition.targetTo,p);dirty=true;
-        if(raw===1)transition=null;
+        if(raw===1){transition=null;updateResolution();}
       }
       const moved=controls.update(dt);
       if(dirty||moved||controls.autoRotate||transition){
