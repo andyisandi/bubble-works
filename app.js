@@ -282,7 +282,7 @@ function setupDesignUpload(readiness) {
 }
 
 async function compatibilityRenderer() {
-  const {createCompatibilityRenderer}=await import('./compatibility-renderer.js?v=performance-1');
+  const {createCompatibilityRenderer}=await import('./compatibility-renderer.js?v=pointer-1');
   return createCompatibilityRenderer(canvas,()=>({boxes,size:SIZE,contact,grid,revision:modelRevision}));
 }
 async function createRenderer() {
@@ -342,16 +342,17 @@ async function init() {
     camera=new THREE.PerspectiveCamera(33,host.clientWidth/host.clientHeight,.015,150);
     camera.position.set(5,4,8);
     controls=new OrbitControls(camera,canvas);
-    controls.enableDamping=true;controls.dampingFactor=.16;
+    controls.enableDamping=false;
     controls.screenSpacePanning=true;controls.zoomSpeed=.8;controls.panSpeed=.8;controls.rotateSpeed=.65;
     controls.minPolarAngle=.003;controls.maxPolarAngle=Math.PI-.003;
     controls.autoRotateSpeed=.7;
     controls.addEventListener('change',()=>{dirty=true;});
     controls.addEventListener('start',()=>{
-      transition=null;setViewSelection('');interacting=true;clearTimeout(resolutionTimer);updateResolution();
+      transition=null;setViewSelection('');interacting=true;canvas.classList.add('is-interacting');clearTimeout(resolutionTimer);updateResolution();
     });
     controls.addEventListener('end',()=>{
-      clearTimeout(resolutionTimer);resolutionTimer=setTimeout(()=>{interacting=false;updateResolution();dirty=true;},250);
+      canvas.classList.remove('is-interacting');
+      clearTimeout(resolutionTimer);resolutionTimer=setTimeout(()=>{interacting=false;updateResolution();dirty=true;},100);
     });
     canvas.addEventListener('contextmenu',e=>e.preventDefault());
     scene.add(new THREE.HemisphereLight('#ffffff','#c2b6bd',1.65));

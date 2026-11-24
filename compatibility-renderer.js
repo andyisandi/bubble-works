@@ -4,6 +4,11 @@ import { CSS3DObject, CSS3DRenderer } from './assets/CSS3DRenderer.js';
 // DOM perspective rendering remains available when WebGL/GPU contexts are blocked.
 // OrbitControls, camera, artwork maps and arrangement matrices stay shared.
 export function createCompatibilityRenderer(canvas, getModel) {
+  // CSS3DObject defaults to pointer-events:auto, even when its parent is
+  // passive. Restore pass-through after construction for every visual object.
+  const passiveObject=element=>{
+    const object=new CSS3DObject(element);element.style.pointerEvents='none';return object;
+  };
   const css=new CSS3DRenderer();
   css.domElement.className='compatibility-stage';
   Object.assign(css.domElement.style,{position:'absolute',inset:'0',pointerEvents:'none',zIndex:'1'});
@@ -16,10 +21,10 @@ export function createCompatibilityRenderer(canvas, getModel) {
   let lastRevision=-1,width=1,height=1,frame,loop;
   const shadowElement=document.createElement('div');
   Object.assign(shadowElement.style,{width:'600px',height:'600px',background:'radial-gradient(ellipse,rgba(48,32,43,.23),rgba(48,32,43,.1) 35%,transparent 70%)',pointerEvents:'none',backfaceVisibility:'hidden'});
-  const shadow=new CSS3DObject(shadowElement);shadow.rotation.x=-Math.PI/2;root.add(shadow);
+  const shadow=passiveObject(shadowElement);shadow.rotation.x=-Math.PI/2;root.add(shadow);
   const gridElement=document.createElement('div');
   Object.assign(gridElement.style,{width:'12000px',height:'12000px',backgroundImage:'linear-gradient(#b3aab433 1px,transparent 1px),linear-gradient(90deg,#b3aab433 1px,transparent 1px)',backgroundSize:'300px 300px',pointerEvents:'none',backfaceVisibility:'hidden'});
-  const floorGrid=new CSS3DObject(gridElement);floorGrid.rotation.x=-Math.PI/2;floorGrid.scale.setScalar(1/600);floorGrid.position.y=-.002;root.add(floorGrid);
+  const floorGrid=passiveObject(gridElement);floorGrid.rotation.x=-Math.PI/2;floorGrid.scale.setScalar(1/600);floorGrid.position.y=-.002;root.add(floorGrid);
   const textureFor=(map,brightness)=>{
     const shade=Math.round(brightness*100)/100;
     let variants=textures.get(map);if(!variants){variants=new Map();textures.set(map,variants);}
@@ -46,7 +51,7 @@ export function createCompatibilityRenderer(canvas, getModel) {
       for(const spec of specs(size)){
         const img=document.createElement('img');img.draggable=false;img.alt='';
         Object.assign(img.style,{width:`${spec.w*600}px`,height:`${spec.h*600}px`,pointerEvents:'none',backfaceVisibility:'hidden',outline:'1px solid rgba(64,30,49,.16)'});
-        const face=new CSS3DObject(img);face.position.set(...spec.p);face.rotation.set(...spec.r);face.scale.setScalar(1/600);
+        const face=passiveObject(img);face.position.set(...spec.p);face.rotation.set(...spec.r);face.scale.setScalar(1/600);
         face.updateMatrix();face.matrixAutoUpdate=false;
         group.add(face);faces.push({...spec,object:face,element:img,group,index:n});
       }

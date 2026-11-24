@@ -36,3 +36,6 @@ Regression coverage: tests/viewer-recovery.browser.js exercises blocked WebGL, a
 
 Chrome rendering performance
 Static shadow maps are updated only after artwork or arrangement changes. Interaction uses a reduced pixel budget, then restores sharper rendering after movement. Software WebGL backends select composited rendering. The compatibility renderer caches lit face images and scene transforms, updating only its camera container during orbit/pan. Tests in tests/viewer-performance.browser.js check shadow draw-call reduction, interaction resolution restoration, nonblank snapshots, software-renderer selection, and zero per-face DOM writes during camera-only movement.
+
+Pointer interaction fix
+All CSS3D visual objects explicitly restore pointer-events:none after CSS3DObject construction, which otherwise resets the property to auto. A scoped stylesheet also makes the complete visual subtree passive, allowing the canvas to capture gestures over box faces, shadows, and the floor grid. Direct camera interaction has no damping tail. tests/viewer-pointer.browser.js verifies real object-centered mouse gestures, hit testing, rotation, both pan methods, zoom, boundary capture and stable camera position after release in both renderers.
