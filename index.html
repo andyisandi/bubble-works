@@ -6,9 +6,9 @@
 <meta name="description" content="Explore the Bubble Works four-pack in 3D. Arrange, stack and inspect the original print artwork from every angle.">
 <meta name="theme-color" content="#f5f4f5">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%238c205d'/%3E%3Ccircle cx='23' cy='21' r='9' fill='none' stroke='%23f4c4d0' stroke-width='2'/%3E%3Ccircle cx='42' cy='36' r='13' fill='none' stroke='%23f4c4d0' stroke-width='2'/%3E%3Ccircle cx='18' cy='47' r='5' fill='none' stroke='%23f4c4d0' stroke-width='2'/%3E%3C/svg%3E">
-<link rel="stylesheet" href="./style.css">
+<link rel="stylesheet" href="./style.css?v=viewer-recovery-1">
 <script type="importmap">{"imports":{"three":"./assets/three.module.js"}}</script>
-<script type="module" src="./app.js?v=dark-cutouts-3"></script>
+<script type="module" src="./app.js?v=viewer-recovery-1"></script>
 </head>
 <body>
 <svg class="icon-library" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs>
@@ -36,7 +36,7 @@
    <p class="upload-help">Upload a PDF using this box’s existing dieline layout.</p>
    <input id="design-file" type="file" accept=".pdf,application/pdf" hidden>
    <button id="upload-design" class="upload-button">Upload Design</button>
-   <p id="upload-status" class="upload-status" role="status" aria-live="polite">Original design loaded · 2 handle cut-outs</p>
+   <p id="upload-status" class="upload-status" role="status" aria-live="polite">Loading original design…</p>
    <p class="upload-note">Dashed cut-out outlines inside panels become openings. Files stay in your browser.</p>
    <button id="restore-design" class="restore-button" hidden>Restore original design</button>
   </section>
@@ -61,7 +61,7 @@
   <div class="scene-heading"><div><span class="eyebrow">DISPLAY PREVIEW</span><h2 id="arrangement-title">Side by side</h2></div><div class="count-pill" id="box-count" aria-live="polite">2 boxes · 8 cans</div></div>
   <canvas id="scene" tabindex="0" aria-label="3D boxes. Drag to rotate, right-drag or Shift-drag to pan, and scroll to zoom. Arrow keys rotate; Shift and arrow keys pan; plus or minus zoom."></canvas>
   <div class="loading" id="loading"><div class="loading-ring"></div><span>Unpacking your artwork…</span></div>
-  <div class="error-state" id="error-state" hidden><h2>The 3D view couldn’t open.</h2><p id="error-message">Please try a browser with WebGL enabled.</p><button onclick="location.reload()">Try again</button></div>
+  <div class="error-state" id="error-state" hidden><h2>The 3D view couldn’t open.</h2><p id="error-message">The viewer could not finish starting. Reload the page to try again.</p><button onclick="location.reload()">Try again</button></div>
   <div class="viewport-actions"><button class="icon-button" id="fit" title="Fit arrangement" aria-label="Fit arrangement"><svg><use href="#i-fit"/></svg></button><button class="icon-button" id="reset" title="Reset view" aria-label="Reset view"><svg><use href="#i-reset"/></svg></button></div>
   <div class="scene-footer"><div class="scene-measure"><span id="display-dimensions">264 × 123 × 157 mm</span><span class="measure-label">DISPLAY FOOTPRINT · W × D × H</span></div><div class="scene-toolbar" role="group" aria-label="Viewport tools"><button class="tool-button" id="auto-rotate" aria-pressed="false" title="Rotate automatically"><svg><use href="#i-rotate"/></svg><span>Auto rotate</span></button><span class="tool-divider"></span><button class="icon-button" id="grid-toggle" aria-pressed="false" aria-label="Show floor grid" title="Show floor grid"><svg><use href="#i-grid"/></svg></button><button class="icon-button" id="fullscreen" aria-label="Full screen" title="Full screen"><svg><use href="#i-full"/></svg></button></div></div>
   <div class="interaction-hint"><span>Drag to rotate</span><b>·</b><span>Shift-drag to pan</span><b>·</b><span>Scroll to zoom</span></div>

@@ -28,3 +28,8 @@ Artwork is provided by Bubble Works. The textures in assets/ are cropped from th
 
 Third-party code
 Three.js and OrbitControls are vendored in assets/. Their MIT license is included at assets/THREE-LICENSE.txt. Mozilla PDF.js renders uploaded PDFs; its license is included at assets/PDFJS-LICENSE.txt.
+
+Viewer startup and recovery
+The file picker is initialized before graphics and artwork loading. WebGL uses the browser-selected GPU and retries without antialiasing. If WebGL2 is unavailable, or the graphics context is lost, a local Three.js CSS3D renderer preserves rotation, pan, zoom, arrangements, PDF uploads and dark cut-outs. PNG snapshots use a local canvas projection in compatibility mode. This mode uses simpler lighting/shadows and the rear flap is represented by the composited rear artwork. Startup errors distinguish artwork failures from graphics setup failures.
+
+Regression coverage: tests/viewer-recovery.browser.js exercises blocked WebGL, a file picker and upload before artwork readiness, context-loss recovery, arrangement preservation, restore, snapshots and mobile layout. Run it with the browser test tool against a served checkout. The fixture PDF in tests/fixtures is synthetic and contains no client artwork.

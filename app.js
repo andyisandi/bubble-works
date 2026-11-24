@@ -12,7 +12,11 @@ let renderer, controls, scene, camera, boxes, closure, edges, floor, grid, conta
 let sceneBounds = new THREE.Box3();
 let transition = null;
 let dirty = true;
-let toastTimer;
+let toastTimer, renderLoop, compatibilityPending;
+let resolveViewerReady, rejectViewerReady;
+const viewerReady=new Promise((resolve,reject)=>{resolveViewerReady=resolve;rejectViewerReady=reject;});
+const startup={phase:'graphics',mode:null,graphicsFailures:[]};
+window.packagingStartup=startup;
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const viewDirections = {
   perspective: new THREE.Vector3(5.4, 3.5, 8.2).normalize(),
@@ -185,7 +189,8 @@ function setupInputs() {
   $('snapshot').addEventListener('click',()=>{
     if(!renderer)return;
     renderer.render(scene,camera);
-    canvas.toBlob(blob=>{
+    const output=renderer.capture?renderer.capture(scene,camera):canvas;
+    output.toBlob(blob=>{
       if(!blob){toast('Could not save this view. Please try again.');return;}
       const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`bubbleworks-${state.across}x${state.rows}x${state.stacks}.png`;a.click();setTimeout(()=>URL.revokeObjectURL(url),10000);toast('Your view has been saved.');
     },'image/png');
@@ -215,9 +220,9 @@ function setupInputs() {
   });
 }
 
-function setupDesignUpload(artwork,materials,originalMaps) {
+function setupDesignUpload(readiness) {
+  let artwork,materials,originalMaps,originalStatus;
   const names=['right','left','top','bottom','front','back'];
-  const originalStatus=artwork.cutouts?`Original design loaded · ${artwork.cutouts} handle cut-outs`:'Original design loaded';
   const input=$('design-file'),button=$('upload-design'),restore=$('restore-design'),status=$('upload-status');
   let uploadedMaps=[];
   const report=(text,error=false)=>{status.textContent=text;status.dataset.error=String(error);};
@@ -226,12 +231,18 @@ function setupDesignUpload(artwork,materials,originalMaps) {
     uploadedMaps.forEach(map=>map.dispose());uploadedMaps=maps===originalMaps?[]:maps;
     dirty=true;
   };
-  report(originalStatus);
+  readiness.then(context=>{
+    ({artwork,materials,maps:originalMaps}=context);
+    originalStatus=artwork.cutouts?`Original design loaded · ${artwork.cutouts} handle cut-outs`:'Original design loaded';
+    if(!button.disabled)report(originalStatus);
+  }).catch(()=>report('Viewer setup failed. Reload the page to retry.',true));
   button.addEventListener('click',()=>input.click());
   input.addEventListener('change',async()=>{
     const file=input.files?.[0];if(!file)return;
     button.disabled=true;restore.disabled=true;button.textContent='Updating design…';
     try{
+      report('Preparing the viewer for your design…');
+      await readiness;
       const {readDesign}=await import('./design-upload.js?v=2');
       const design=await readDesign(file,artwork,report);
       const maps=names.map(name=>{
@@ -256,9 +267,46 @@ function setupDesignUpload(artwork,materials,originalMaps) {
   });
 }
 
+async function compatibilityRenderer() {
+  const {createCompatibilityRenderer}=await import('./compatibility-renderer.js?v=recovery-1');
+  return createCompatibilityRenderer(canvas,()=>({boxes,size:SIZE,contact,grid}));
+}
+async function createRenderer() {
+  // Let the browser select its available GPU; a forced high-performance
+  // context can be unavailable after a driver reset or on restricted clients.
+  for(const antialias of [true,false]){
+    try{
+      const options={antialias,alpha:false,preserveDrawingBuffer:true,powerPreference:'default'};
+      const context=canvas.getContext('webgl2',options);
+      if(!context)throw new Error('WebGL2 context unavailable');
+      const result=new THREE.WebGLRenderer({canvas,context,...options});
+      result.mode='webgl';return result;
+    }catch(error){startup.graphicsFailures.push(error.message);}
+  }
+  return compatibilityRenderer();
+}
+async function switchToCompatibility(reason) {
+  if(renderer?.mode==='compatibility'||compatibilityPending)return;
+  startup.graphicsFailures.push(reason?.message||'Graphics context lost');
+  compatibilityPending=(async()=>{
+    renderer?.setAnimationLoop(null);
+    const previous=renderer;
+    renderer=await compatibilityRenderer();previous?.dispose();
+    renderer.setSize(host.clientWidth,host.clientHeight,false);
+    startup.mode=renderer.mode;
+    if(window.packagingStudio)Object.assign(window.packagingStudio,{renderer,rendererMode:renderer.mode});
+    dirty=true;renderer.setAnimationLoop(renderLoop);
+  })().catch(error=>{
+    console.error('Viewer recovery:',error);
+    $('error-state').hidden=false;
+    $('error-message').textContent='The graphics view could not recover. Reload the page to try again.';
+  }).finally(()=>{compatibilityPending=null;});
+  return compatibilityPending;
+}
 async function init() {
   try {
-    renderer=new THREE.WebGLRenderer({canvas,antialias:true,preserveDrawingBuffer:true,powerPreference:'high-performance'});
+    renderer=await createRenderer();
+    startup.mode=renderer.mode;
     renderer.setPixelRatio(Math.min(devicePixelRatio,2));
     renderer.outputColorSpace=THREE.SRGBColorSpace;
     renderer.toneMapping=THREE.NoToneMapping;
@@ -284,6 +332,7 @@ async function init() {
     key.shadow.camera.near=.1;key.shadow.camera.far=90;
     scene.add(key,key.target);
     fill=new THREE.DirectionalLight('#f4f6ff',.55);fill.position.set(5,4,-3);scene.add(fill);
+    startup.phase='artwork';
     const loader=new THREE.TextureLoader();
     const artworkResponse=await fetch('./assets/artwork.json?v=outer1120-6660c005');
     if(!artworkResponse.ok)throw new Error('Artwork metadata could not load');
@@ -293,6 +342,7 @@ async function init() {
     const maps=await Promise.all(faceNames.map(name=>loader.loadAsync(`./assets/${name}.png?v=outer1120-6660c005`)));
     const anisotropy=renderer.capabilities.getMaxAnisotropy();
     maps.forEach(t=>{t.colorSpace=THREE.SRGBColorSpace;t.anisotropy=anisotropy;t.generateMipmaps=true;});
+    startup.phase='scene';
     const materials=maps.map(map=>{
       const material=new THREE.MeshStandardMaterial({map,roughness:.92,metalness:0,side:THREE.DoubleSide});
       // Keep the PDF cut-out mask, but present each opening as near-black
@@ -333,12 +383,16 @@ async function init() {
     contact=new THREE.Mesh(new THREE.PlaneGeometry(1,1),new THREE.MeshBasicMaterial({map:new THREE.CanvasTexture(shadowCanvas),transparent:true,depthWrite:false,opacity:.55}));contact.rotation.x=-Math.PI/2;scene.add(contact);
     grid=new THREE.GridHelper(40,80,'#a79ba3','#b8afb6');grid.position.y=.003;grid.material.transparent=true;grid.material.opacity=.3;grid.visible=false;scene.add(grid);
     resize();setupInputs();arrange(false);
-    new ResizeObserver(resize).observe(host);
+    if(typeof ResizeObserver!=='undefined')new ResizeObserver(resize).observe(host);
+    else window.addEventListener('resize',resize);
     $('loading').classList.add('done');
-    window.packagingStudio={state,renderer,scene,camera,controls,boxes,closure,sceneBounds,frameView,arrange,SIZE,artworkSource:artwork.source,artworkRevision:artwork.revision,artwork};
-    setupDesignUpload(artwork,materials,maps);
+    window.packagingStudio={state,renderer,scene,camera,controls,boxes,closure,sceneBounds,frameView,arrange,SIZE,artworkSource:artwork.source,artworkRevision:artwork.revision,artwork,rendererMode:renderer.mode};
+    startup.phase='ready';
+    resolveViewerReady({artwork,materials,maps});
+    canvas.addEventListener('webglcontextlost',event=>{event.preventDefault();void switchToCompatibility(new Error('Graphics context lost'));});
+    if(renderer.debug)renderer.debug.onShaderError=()=>void switchToCompatibility(new Error('Graphics shader could not compile'));
     let previous=performance.now();
-    renderer.setAnimationLoop(now=>{
+    renderLoop=now=>{
       const dt=Math.min((now-previous)/1000,.1);previous=now;
       if(transition){
         const raw=Math.min((now-transition.start)/transition.duration,1);const p=raw*raw*(3-2*raw);
@@ -347,12 +401,18 @@ async function init() {
         if(raw===1)transition=null;
       }
       const moved=controls.update(dt);
-      if(dirty||moved||controls.autoRotate||transition){renderer.render(scene,camera);dirty=false;}
-    });
+      if(dirty||moved||controls.autoRotate||transition){
+        try{renderer.render(scene,camera);dirty=false;}catch(error){void switchToCompatibility(error);}
+      }
+    };
+    renderer.setAnimationLoop(renderLoop);
   } catch(error) {
     console.error('Packaging studio:',error);
     $('loading').classList.add('done');$('error-state').hidden=false;
-    if(/texture|load|fetch|image/i.test(error.message))$('error-message').textContent='The artwork could not load. Check your connection and try again.';
+    $('error-message').textContent=startup.phase==='artwork'?'The artwork could not load. Check your connection and try again.':'The viewer could not finish starting. Reload the page to try again.';
+    startup.error=error.message;rejectViewerReady(error);
   }
 }
+// Wire the file picker before any graphics or artwork initialization.
+setupDesignUpload(viewerReady);
 init();
